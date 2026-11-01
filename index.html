@@ -171,6 +171,26 @@ body{background:linear-gradient(135deg,#eef2ff,#f5f7fc 50%,#e8f8f1)}#app{max-wid
 .dq-li{display:flex;gap:7px;margin-top:5px;font-size:13.5px}.dq-li:before{content:"";width:7px;height:7px;border-radius:50%;margin-top:7px;flex:none}.dq-g .dq-li:before{background:#16a34a}.dq-r .dq-li:before{background:#dc2626}
 @media(min-width:700px){.sh{max-width:680px!important}}
 </style>
+<style>
+.tv{position:fixed;inset:0;z-index:80;background:linear-gradient(180deg,#e6f3f1,#f4f8f8 40%,#eef3f6);overflow:auto;-webkit-overflow-scrolling:touch;animation:fade .2s}
+.tv-top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;background:rgba(244,248,248,.92);backdrop-filter:blur(10px);border-bottom:1px solid #dbe6e6}
+.tv-top b{font-size:14px;font-weight:800;color:#0b2b2a}
+.tv-close{display:flex;align-items:center;gap:6px;height:40px;padding:0 14px 0 8px;border-radius:12px;background:#0f766e;color:#fff;font-weight:700;font-size:14px;border:0;cursor:pointer}
+.tv-in{max-width:760px;margin:0 auto;padding:16px 16px calc(40px + env(safe-area-inset-bottom,0px))}
+.tv-hero{border-radius:24px;padding:22px 22px 20px;color:#fff;background:radial-gradient(400px 260px at 100% 0,rgba(255,255,255,.22),transparent 70%),linear-gradient(135deg,#0b3b39,#0f766e 60%,#14a89a)}
+.tv-br{display:flex;align-items:center;gap:12px}.tv-br b{display:block;font-size:15px;font-weight:800}.tv-br small{font-size:11px;letter-spacing:.1em;opacity:.8;font-weight:700}
+.tv-hero h1{font-size:24px;line-height:1.2;font-weight:800;letter-spacing:-.02em;margin:16px 0 12px;text-transform:uppercase}
+.tv-chips{display:flex;gap:8px;flex-wrap:wrap}.tv-chips span{background:rgba(255,255,255,.17);border:1px solid rgba(255,255,255,.28);padding:4px 11px;border-radius:99px;font-size:12px;font-weight:600}
+.tv-card{background:#fff;border-radius:20px;border:1px solid #e3eaef;margin-top:12px}
+.tv-sum{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 22px;flex-wrap:wrap}
+.tv-info{display:grid;grid-template-columns:1fr 1fr;gap:14px 24px;flex:1;min-width:230px}.tv-info span{display:block;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#7b8a98;font-weight:700}.tv-info b{font-size:14.5px}
+.tv-avg{grid-column:1/-1;font-size:13px;color:#5b6b7a}
+.tv-ring{position:relative;width:132px;height:132px;flex:none;margin:0 auto}.tv-rc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1}.tv-rc b{font-size:31px;font-weight:800}.tv-rc span{font-size:11px;color:#7b8a98;font-weight:600;margin-top:3px}
+.tv-tx{font-size:14px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
+.tv-empty{margin-top:14px;padding:14px;border-radius:14px;background:#fff7e6;color:#8a5200;font-size:13.5px}
+.tv-note{text-align:center;color:#8a99a6;font-size:12px;margin-top:22px}
+@media(min-width:700px){.tv-in{padding-top:24px}.tv-hero h1{font-size:28px}.dq-2{grid-template-columns:1fr 1fr}}
+</style>
 </head>
 <body>
 <div id="app"></div><div id="sheet"></div><div id="cam"></div>
@@ -502,12 +522,19 @@ function tDetail(t){const f=n=>n==null||n===''?'—':fmt(+n),nl=x=>esc(x).replac
     (c.y||[]).map(y=>{const k=+y.d>=+y.m?'ok':(+y.d<=0?'lo':'mid');return `<div class="dq-y ${k}"><div class="dq-yh"><span class="dq-id">Ý ${esc(y.i||'')}</span><div class="dq-sc"><b>${f(y.d)}</b> / ${f(y.m)}</div></div>${y.n?`<div class="dq-nd">${nl(y.n)}</div>`:''}${y.o?`<div class="dq-ok">✓ ${nl(y.o)}</div>`:''}${y.l?`<div class="dq-lose">✗ Mất điểm: ${nl(y.l)}</div>`:''}</div>`}).join('')+`</div>`}).join('')}
 function tTail(t){const li=(a)=>a&&a.length?a.map(x=>`<div class="dq-li"><span>${esc(x)}</span></div>`).join(''):'<div style="color:var(--mu)">—</div>';
   return (t.mh&&t.mh.length||t.ci&&t.ci.length)?`<div class="dq-2"><div class="dq-box dq-g"><div class="dq-bt">Điểm mạnh</div>${li(t.mh)}</div><div class="dq-box dq-r"><div class="dq-bt" style="color:#b91c1c">Cần cải thiện</div>${li(t.ci)}</div></div>`:''}
-function openTest(id){const t=S.data.tests.find(x=>x.id===id),v=t.score/t.max*10;$('#sheet').innerHTML=`<div class="sheet" onclick="closeSheet()"><div class="sh" onclick="event.stopPropagation()"><div class="grab"></div><small style="color:var(--mu)">${esc(t.cls)} · ${vd(t.date)}</small><h2 style="font-size:23px;letter-spacing:-.03em;margin:4px 0 14px">${esc(t.title)}</h2><div style="display:flex;gap:12px"><div class="st" style="flex:1"><b class="${tone(v)}" style="background:none">${fmt(t.score)}<small style="display:inline;font-size:14px">/${t.max}</small></b><small>Điểm của em</small></div><div class="st" style="flex:1"><b style="color:var(--am)">${t.avg?fmt(t.avg):'—'}</b><small>Trung bình lớp</small></div></div>${tDetail(t)}${t.nx?`<div class="nx"><h4>Nhận xét cá nhân của giáo viên</h4>${esc(t.nx)}</div>`:''}${t.gn?`<div class="nx g2"><h4>Nhận xét chung / Lời nhắn của giáo viên</h4>${esc(t.gn)}</div>`:''}${tTail(t)}<button class="btn sec" style="margin-top:18px" onclick="closeSheet()">Đóng</button></div></div>`}
+function openTest(id){const t=S.data.tests.find(x=>x.id===id);if(!t)return;const s=S.stu||{},v=t.score/t.max*10,pct=Math.max(0,Math.min(100,t.score/t.max*100)),col=v>=8?'#0f766e':v>=5?'#d97706':'#dc2626';
+  const dob=s.dob?(/^\d{4}-\d{2}-\d{2}/.test(s.dob)?vd(String(s.dob).slice(0,10)):esc(s.dob)):'',info=[['Họ và tên',s.name],['Ngày sinh',dob],['Trường',s.school],['Lớp',t.cls]].filter(x=>x[1]).map(x=>`<div><span>${x[0]}</span><b>${x[0]==='Ngày sinh'?x[1]:esc(x[1])}</b></div>`).join('');
+  const has=(t.cau&&t.cau.length)||(t.mh&&t.mh.length)||(t.ci&&t.ci.length);
+  document.body.style.overflow='hidden';
+  $('#sheet').innerHTML=`<div class="tv"><div class="tv-top"><button class="tv-close" onclick="closeSheet()" aria-label="Đóng">${ic('left',20)}<span>Đóng</span></button><b>Phiếu kết quả bài kiểm tra</b></div><div class="tv-in"><div class="tv-hero"><div class="tv-br">${logoImg(46)}<div><b>${esc(CFG.name)}</b><small>PHIẾU KẾT QUẢ BÀI KIỂM TRA</small></div></div><h1>${esc(t.title)}</h1><div class="tv-chips">${t.date?`<span>Ngày kiểm tra: ${vd(t.date)}</span>`:''}${t.cls?`<span>Lớp ${esc(t.cls)}</span>`:''}</div></div>
+  <div class="tv-card tv-sum"><div class="tv-info">${info}${t.avg?`<div class="tv-avg">Điểm trung bình của lớp: <b>${fmt(t.avg)}</b> / 10</div>`:''}</div><div class="tv-ring"><svg viewBox="0 0 120 120" width="132" height="132"><circle cx="60" cy="60" r="50" fill="none" stroke="#e3efed" stroke-width="11"/><circle cx="60" cy="60" r="50" fill="none" stroke="${col}" stroke-width="11" stroke-linecap="round" stroke-dasharray="${(pct/100*314.16).toFixed(1)} 314.16" transform="rotate(-90 60 60)"/></svg><div class="tv-rc"><b style="color:${col}">${fmt(t.score)}</b><span>/ ${t.max} điểm</span></div></div></div>
+  ${tDetail(t)}${t.nx?`<div class="dq-box" style="margin-top:14px;background:#f8fbfb"><div class="dq-bt">Nhận xét cá nhân của giáo viên</div><div class="tv-tx">${esc(t.nx)}</div></div>`:''}${t.gn?`<div class="dq-box" style="margin-top:12px;background:#fffbeb;border-color:#f3e2b3"><div class="dq-bt" style="color:#b45309">Nhận xét chung / Lời nhắn của giáo viên</div><div class="tv-tx">${esc(t.gn)}</div></div>`:''}${tTail(t)}${has?'':'<div class="tv-empty">Bài này chưa có chi tiết từng câu, từng ý. Nếu giáo viên đã chấm chi tiết, hãy báo giáo viên đồng bộ lại điểm.</div>'}<div class="tv-note">Mọi thắc mắc về điểm số, em vui lòng liên hệ giáo viên.</div></div></div>`;
+  const tv=document.querySelector('.tv');if(tv)tv.scrollTop=0}
 async function showProof(i){const x=S.data.att[i];if(!x||!x.pid)return;let v=null;
   try{v=await val('proofs/'+x.pid+'_'+S.stu.id)}catch(e){return toast('Chưa xem được ảnh: '+(/permission/i.test(e.message||'')?'cần cập nhật Rules (nhánh proofs).':e.message))}
   if(!v||!/^data:image\//.test(v.img||''))return toast('Buổi này không có ảnh điểm danh');
   $('#sheet').innerHTML=`<div class="sheet" onclick="closeSheet()"><div class="sh" onclick="event.stopPropagation()"><div class="grab"></div><small style="color:var(--mu)">${DN[new Date(x.date).getDay()]}, ${vd(x.date)}${x.time?' · '+x.time:''}</small><h2 style="font-size:21px;letter-spacing:-.03em;margin:4px 0 0">Ảnh điểm danh</h2><img class="pimg" src="${esc(v.img)}" alt="Ảnh điểm danh"><p style="color:var(--mu);font-size:13.5px">${esc(x.cls)} · ${stLabel(x.st)}</p><button class="btn sec" style="margin-top:14px" onclick="closeSheet()">Đóng</button></div></div>`}
-function closeSheet(){$('#sheet').innerHTML=''}
+function closeSheet(){$('#sheet').innerHTML='';document.body.style.overflow=''}
 function calMove(k){S.calM=new Date(S.calM.getFullYear(),S.calM.getMonth()+k,1);render()}
 function go(t){S.tab=t;render();window.scrollTo(0,0)}
 async function logout(){stopScoreLive();S.manual=true;try{await au.signOut()}catch(e){}S={manual:false,face:null,step:'welcome',tab:'home',f:{},stu:null,data:null,calM:new Date(),clsF:'all',err:'',busy:false,t:0,pw:false,reset:false,sids:[],notes:[],add:false,phone:''};render()}
