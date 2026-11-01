@@ -229,7 +229,7 @@ function ensureFaceApi(){if(facePromise)return facePromise;facePromise=(async()=
   return true})().catch(e=>{facePromise=null;throw e});return facePromise}
 const faceOpts=()=>FACE_KIND==='tiny'?new faceapi.TinyFaceDetectorOptions({inputSize:320,scoreThreshold:0.4}):new faceapi.SsdMobilenetv1Options({minConfidence:0.5});
 /* điểm: nhánh studentScores/{mã HS}/{mã bài} do trang quản lý (TROGIANG) tự đồng bộ — cùng 1 Realtime Database */
-function mapTests(sc,cn){return Object.entries(sc||{}).filter(([id,t])=>t&&isFinite(+t.s)).map(([id,t])=>({id,cls:t.cn||(cn[t.c]||{}).name||'',title:t.t||'Bài kiểm tra',date:t.d||'',score:+t.s,max:+t.m||10,avg:t.a!=null?+t.a/(+t.m||10)*10:0,nx:t.n||'',gn:t.g||'',mh:Array.isArray(t.mh)?t.mh:[],ci:Array.isArray(t.ci)?t.ci:[],cau:Array.isArray(t.cau)?t.cau:[]})).sort((a,b)=>String(b.date).localeCompare(String(a.date)))}
+function mapTests(sc,cn){return Object.entries(sc||{}).filter(([id,t])=>t&&isFinite(+t.s)).map(([id,t])=>({id,cls:t.cn||(cn[t.c]||{}).name||'',title:t.t||'Bài kiểm tra',date:t.d||'',score:+t.s,max:+t.m||10,avg:t.a!=null?+t.a/(+t.m||10)*10:0,nx:t.n||'',gn:t.g||'',mh:Array.isArray(t.mh)?t.mh:[],ci:Array.isArray(t.ci)?t.ci:[],cau:Array.isArray(t.cau)?t.cau:[],pc:t.pc||''})).sort((a,b)=>String(b.date).localeCompare(String(a.date)))}
 let scRef=null,scFn=null;
 function stopScoreLive(){if(scRef&&scFn)scRef.off('value',scFn);scRef=scFn=null}
 function watchScores(sid){stopScoreLive();if(!rdb||!sid)return;let first=true;
@@ -516,15 +516,32 @@ function vMe(){const s=S.stu;return`<div class="ph"><h1>Cá nhân</h1></div><div
   <div class="card">${S.sids.length>1?`<button class="act" onclick="openSw()">${ic('user')}<span>Đổi học sinh</span><em>${S.sids.length} hồ sơ</em></button>`:''}<button class="act" onclick="S.add=true;S.f={};nav('info')">${ic('grad')}<span>Thêm học sinh (anh/chị/em)</span></button><button class="act" onclick="openPw()">${ic('lock')}<span>Đổi mật khẩu</span></button></div>
   <button class="btn sec" style="width:calc(100% - 40px);margin:6px 20px;color:var(--r)" onclick="logout()">${ic('out',20)} Đăng xuất</button>`}
 function tabs(){const T=[['home','home','Trang chủ'],['classes','book','Lớp học'],['scores','chart','Điểm số'],['att','cal','Điểm danh'],['me','user','Cá nhân']];return`<nav class="tabs">${T.map(t=>`<button class="tb ${S.tab===t[0]?'on':''}" onclick="go('${t[0]}')"><span>${ic(t[1],22)}</span>${t[2]}</button>`).join('')}</nav>`}
+
+/* chi tiết từng câu/ý: lấy từ phiếu công khai của đợt thi (pubexam/{mã}/idx → pubres/{token}) */
+const _norm=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/gi,'d').toLowerCase().trim();
+const _normSch=s=>_norm(s).replace(/[^a-z0-9 ]/g,' ').split(/\s+/).filter(w=>w&&!['truong','thcs','thpt','ptcs','ptth'].includes(w)).join('');
+async function _sha(s){try{const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('')}catch(e){let h=5381;for(const ch of s)h=((h<<5)+h+ch.charCodeAt(0))|0;return 'x'+h}}
+async function loadDetail(t){
+  if(!t||t._dl||(t.cau&&t.cau.length)||!t.pc||!S.stu||!S.stu.name||!S.stu.dob||!S.stu.school)return false;
+  t._dl=1;
+  try{const key='h'+(await _sha('kq1|'+_norm(S.stu.name).replace(/\s+/g,' ')+'|'+String(S.stu.dob).slice(0,10)+'|'+_normSch(S.stu.school))).slice(0,40);
+    const tok=await val('pubexam/'+t.pc+'/idx/'+key);if(!tok)return false;
+    const p=await val('pubres/'+tok);if(!p)return false;
+    const A=x=>Array.isArray(x)?x:(x&&typeof x==='object'?Object.values(x):[]);
+    t.cau=A(p.cau).map(c=>({i:c.id,t:c.ten||'',d:c.diem,m:c.max,y:A(c.y).map(y=>({i:y.id,d:y.diem,m:y.max,n:y.nd||'',o:y.ok||'',l:y.lose||''}))}));
+    if(!t.mh.length)t.mh=A(p.manh);if(!t.ci.length)t.ci=A(p.cai);
+    if(!t.nx&&p.nx)t.nx=p.nx;if(!t.gn&&p.gn)t.gn=p.gn;
+    return t.cau.length>0||t.mh.length>0||t.ci.length>0;
+  }catch(e){return false}}
 function tDetail(t){const f=n=>n==null||n===''?'—':fmt(+n),nl=x=>esc(x).replace(/\n/g,'<br>');
   return (t.cau||[]).map((c,ci)=>{const cp=+c.m?Math.min(100,(+c.d||0)/+c.m*100):0,bc=cp>=99.9?'#16a34a':cp<=0?'#dc2626':'#d97706';
     return `<div class="dq-c">${ci===0?'<div class="dq-sec">Chi tiết từng câu, từng ý</div>':''}<div class="dq-ch"><b>${esc(c.t||('Câu '+c.i))}</b><span class="dq-pill">${f(c.d)} / ${f(c.m)}</span></div><div class="dq-pb"><i style="width:${cp}%;background:${bc}"></i></div>`+
     (c.y||[]).map(y=>{const k=+y.d>=+y.m?'ok':(+y.d<=0?'lo':'mid');return `<div class="dq-y ${k}"><div class="dq-yh"><span class="dq-id">Ý ${esc(y.i||'')}</span><div class="dq-sc"><b>${f(y.d)}</b> / ${f(y.m)}</div></div>${y.n?`<div class="dq-nd">${nl(y.n)}</div>`:''}${y.o?`<div class="dq-ok">✓ ${nl(y.o)}</div>`:''}${y.l?`<div class="dq-lose">✗ Mất điểm: ${nl(y.l)}</div>`:''}</div>`}).join('')+`</div>`}).join('')}
 function tTail(t){const li=(a)=>a&&a.length?a.map(x=>`<div class="dq-li"><span>${esc(x)}</span></div>`).join(''):'<div style="color:var(--mu)">—</div>';
   return (t.mh&&t.mh.length||t.ci&&t.ci.length)?`<div class="dq-2"><div class="dq-box dq-g"><div class="dq-bt">Điểm mạnh</div>${li(t.mh)}</div><div class="dq-box dq-r"><div class="dq-bt" style="color:#b91c1c">Cần cải thiện</div>${li(t.ci)}</div></div>`:''}
-function openTest(id){const t=S.data.tests.find(x=>x.id===id);if(!t)return;const s=S.stu||{},v=t.score/t.max*10,pct=Math.max(0,Math.min(100,t.score/t.max*100)),col=v>=8?'#0f766e':v>=5?'#d97706':'#dc2626';
+function openTest(id){const t=S.data.tests.find(x=>x.id===id);if(!t)return;if(!t._dl&&t.pc&&!(t.cau&&t.cau.length))loadDetail(t).then(ok=>{if(ok&&document.querySelector('.tv'))openTest(id)});const s=S.stu||{},v=t.score/t.max*10,pct=Math.max(0,Math.min(100,t.score/t.max*100)),col=v>=8?'#0f766e':v>=5?'#d97706':'#dc2626';
   const dob=s.dob?(/^\d{4}-\d{2}-\d{2}/.test(s.dob)?vd(String(s.dob).slice(0,10)):esc(s.dob)):'',info=[['Họ và tên',s.name],['Ngày sinh',dob],['Trường',s.school],['Lớp',t.cls]].filter(x=>x[1]).map(x=>`<div><span>${x[0]}</span><b>${x[0]==='Ngày sinh'?x[1]:esc(x[1])}</b></div>`).join('');
-  const has=(t.cau&&t.cau.length)||(t.mh&&t.mh.length)||(t.ci&&t.ci.length);
+  const has=(t.cau&&t.cau.length)||(t.mh&&t.mh.length)||(t.ci&&t.ci.length);const loading=!has&&t.pc&&t._dl===1&&!t._done;
   document.body.style.overflow='hidden';
   $('#sheet').innerHTML=`<div class="tv"><div class="tv-top"><button class="tv-close" onclick="closeSheet()" aria-label="Đóng">${ic('left',20)}<span>Đóng</span></button><b>Phiếu kết quả bài kiểm tra</b></div><div class="tv-in"><div class="tv-hero"><div class="tv-br">${logoImg(46)}<div><b>${esc(CFG.name)}</b><small>PHIẾU KẾT QUẢ BÀI KIỂM TRA</small></div></div><h1>${esc(t.title)}</h1><div class="tv-chips">${t.date?`<span>Ngày kiểm tra: ${vd(t.date)}</span>`:''}${t.cls?`<span>Lớp ${esc(t.cls)}</span>`:''}</div></div>
   <div class="tv-card tv-sum"><div class="tv-info">${info}${t.avg?`<div class="tv-avg">Điểm trung bình của lớp: <b>${fmt(t.avg)}</b> / 10</div>`:''}</div><div class="tv-ring"><svg viewBox="0 0 120 120" width="132" height="132"><circle cx="60" cy="60" r="50" fill="none" stroke="#e3efed" stroke-width="11"/><circle cx="60" cy="60" r="50" fill="none" stroke="${col}" stroke-width="11" stroke-linecap="round" stroke-dasharray="${(pct/100*314.16).toFixed(1)} 314.16" transform="rotate(-90 60 60)"/></svg><div class="tv-rc"><b style="color:${col}">${fmt(t.score)}</b><span>/ ${t.max} điểm</span></div></div></div>
