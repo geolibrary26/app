@@ -246,14 +246,28 @@ const DB={
  async findStudent(f){const ro=(await val('roster'))||{},nm=norm(f.name).replace(/\s+/g,' ');
   for(const id in ro){const r=ro[id];if(r.active===false||!r.vhash||norm(r.name).replace(/\s+/g,' ')!==nm)continue;const h=await vhash(id,f.dob,f.school);if(h===r.vhash)return{id,vh:h,name:r.name}}
   return null},
- async register(sid,vh,phone,pw,reset){const p=digits(phone),ix=await val('phoneIdx/'+p);
-  if(ix&&!reset){let u;try{u=(await au.signInWithEmailAndPassword(ix.em,pw)).user}catch(e){throw new Error('SĐT này đã có tài khoản (anh/chị/em). Nhập đúng mật khẩu đang dùng để liên kết thêm học sinh này.')}
-   if(await val('locks/'+u.uid)){await au.signOut();throw new Error(LOCKMSG)}
-   S.phone=p;await DB.putAcct(u.uid,p,sid,vh);DB.log('link',sid);return}
+ async stuOwner(sid){return await val('stuAcct/'+sid).catch(()=>null)},
+ maskP:p=>p.slice(0,3)+'****'+p.slice(-3),
+ async claim(uid,p,sid,vh,own){const o={uid,vh,pm:DB.maskP(p),at:Date.now()};if(own)o.rs=true;return rdb.ref('stuAcct/'+sid).set(o)},
+ async releaseOld(own,sid){if(!own||!own.uid)return;
+  try{await rdb.ref('accts/'+own.uid+'/sids/'+sid).remove()}catch(e){}
+  try{await rdb.ref('accts/'+own.uid).remove()}catch(e){}},   /* chỉ xóa được khi tài khoản cũ đã hết học sinh */
+ async register(sid,vh,phone,pw,reset){const p=digits(phone),own=await DB.stuOwner(sid);
+  if(own&&!reset)throw new Error(DB.linkedMsg(own));
+  const ix=await val('phoneIdx/'+p),mine=own&&ix&&own.uid===ix.uid;
+  if(ix&&!mine){let u=null;try{u=(await au.signInWithEmailAndPassword(ix.em,pw)).user}catch(e){}
+   if(u){if(await val('locks/'+u.uid)){await au.signOut();throw new Error(LOCKMSG)}
+    if(own&&own.uid===u.uid){S.phone=p;return}
+    try{await DB.claim(u.uid,p,sid,vh,own);await DB.putAcct(u.uid,p,sid,vh)}catch(e){await au.signOut().catch(()=>{});throw new Error('Chưa liên kết được học sinh vào SĐT này ('+(e.message||e)+'). Hãy báo trợ giảng cập nhật Rules.')}
+    S.phone=p;await DB.releaseOld(own,sid);DB.log('link',sid);return}
+   /* sai mật khẩu: nếu tài khoản cũ của SĐT này đã trống (học sinh đã được đặt lại) thì cho tạo mới, ngược lại báo lỗi */
+  }
   const em='h'+p+'-'+Date.now().toString(36)+'@'+CONFIG.emailDomain,c=await au.createUserWithEmailAndPassword(em,pw);S.phone=p;
-  try{await rdb.ref().update({['accts/'+c.user.uid]:{p,sids:{[sid]:vh},at:Date.now()},['phoneIdx/'+p]:{em,uid:c.user.uid,sid,vh}})}
-  catch(e){try{await c.user.delete()}catch(x){}throw new Error('Chưa lưu được tài khoản ('+e.message+'). Hãy nhờ trợ giảng cập nhật Rules cho cổng học sinh.')}
-  DB.log('register',sid)},
+  try{const sc={uid:c.user.uid,vh,pm:DB.maskP(p),at:Date.now()};if(own)sc.rs=true;
+   await rdb.ref().update({['accts/'+c.user.uid]:{p,sids:{[sid]:vh},at:Date.now()},['phoneIdx/'+p]:{em,uid:c.user.uid,sid,vh},['stuAcct/'+sid]:sc})}
+  catch(e){try{await c.user.delete()}catch(x){}throw new Error(ix&&!mine?'SĐT này đã có tài khoản (anh/chị/em). Nhập đúng mật khẩu đang dùng để liên kết thêm học sinh này.':'Chưa lưu được tài khoản ('+e.message+'). Hãy nhờ trợ giảng cập nhật Rules cho cổng học sinh.')}
+  await DB.releaseOld(own,sid);DB.log('register',sid)},
+ linkedMsg:o=>'Học sinh này đã có tài khoản'+(o&&o.pm?' (SĐT '+o.pm+')':'')+'. Mỗi học sinh chỉ liên kết với 1 SĐT. Em hãy đăng nhập bằng SĐT đó; nếu quên mật khẩu, chọn “Quên mật khẩu” để xác minh lại và tạo tài khoản mới.',
  async putAcct(uid,p,sid,vh){const a=await val('accts/'+uid).catch(()=>null);const u={['sids/'+sid]:vh};if(!a||!a.p){u.p=p;u.at=Date.now()}
   try{await rdb.ref('accts/'+uid).update(u)}catch(e){throw new Error('Chưa liên kết được hồ sơ ('+(e.message||e)+'). Hãy báo trợ giảng kiểm tra Rules hoặc xóa bản ghi phoneIdx/'+p+' rồi thử lại.')}},
  async log(ev,sid){try{const u=au.currentUser;if(u)await rdb.ref('loginLogs').push({t:Date.now(),uid:u.uid,p:S.phone||'',sid:sid||'',ev,ua:navigator.userAgent.slice(0,90)})}catch(e){}},
@@ -261,9 +275,15 @@ const DB={
   return DB.account((await au.signInWithEmailAndPassword(ix.em,pw)).user)},
  async account(u){if(await val('locks/'+u.uid)){await au.signOut();throw new Error(LOCKMSG)}
   const a=await val('accts/'+u.uid);if(!a||!a.sids){await au.signOut();throw new Error('Tài khoản đã được đặt lại. Em chọn “Đăng nhập lần đầu” để tạo mật khẩu mới.')}
-  S.phone=a.p;const ids=Object.keys(a.sids);S.sids=await Promise.all(ids.map(async id=>({id,name:(await val('roster/'+id+'/name'))||id})));
+  S.phone=a.p;let ids=[];
+  for(const id of Object.keys(a.sids)){const ow=await DB.stuOwner(id);
+   if(!ow){try{await rdb.ref('stuAcct/'+id).set({uid:u.uid,vh:a.sids[id],pm:DB.maskP(a.p||''),at:Date.now(),mig:1});ids.push(id)}catch(e){ids.push(id)}}
+   else if(ow.uid===u.uid)ids.push(id);
+   else{try{await rdb.ref('accts/'+u.uid+'/sids/'+id).remove()}catch(e){}}}   /* học sinh đã thuộc tài khoản khác → gỡ khỏi tài khoản này */
+  if(!ids.length){await au.signOut();throw new Error('Tài khoản đã được đặt lại. Em chọn “Đăng nhập lần đầu” để tạo mật khẩu mới.')}
+  S.sids=await Promise.all(ids.map(async id=>({id,name:(await val('roster/'+id+'/name'))||id})));
   rdb.ref('accts/'+u.uid+'/last').set(Date.now()).catch(()=>{});let sid=null;try{sid=localStorage.getItem('gl_sid')}catch(e){}return ids.includes(sid)?sid:ids[0]},
- async link(id,vh,name){await DB.putAcct(au.currentUser.uid,S.phone,id,vh);if(!S.sids.some(x=>x.id===id))S.sids.push({id,name});DB.log('link',id)},
+ async link(id,vh,name){const ow=await DB.stuOwner(id),uid=au.currentUser.uid;if(ow&&ow.uid!==uid)throw new Error(DB.linkedMsg(ow));if(!ow)await DB.claim(uid,S.phone,id,vh,false);await DB.putAcct(uid,S.phone,id,vh);if(!S.sids.some(x=>x.id===id))S.sids.push({id,name});DB.log('link',id)},
  async notices(){const n=(await val('notices'))||{},rd=(await val('noticeRead/'+S.stu.id))||{},now=Date.now(),cids=S.data.classes.map(c=>c.id);
   return Object.entries(n).map(([id,x])=>({id,...x,read:!!rd[id]})).filter(x=>x.at<=now&&(!x.exp||x.exp>now)&&(!x.to||!x.to.length||x.to.some(c=>cids.includes(c)))).sort((a,b)=>(b.pin?1:0)-(a.pin?1:0)||b.at-a.at)},
  async load(sid){
@@ -387,14 +407,14 @@ function viewWelcome(){return`<div class="auth wel">${brandRow(46,'Cổng học 
 function viewLogin(){return shell(`<h1>Chào mừng trở lại</h1><p class="s">Đăng nhập bằng SĐT phụ huynh đã đăng ký và mật khẩu của em.</p>${E()}
 <div class="fld"><label for="lp">Số điện thoại</label><input id="lp" type="tel" inputmode="numeric" autocomplete="username" placeholder="09xx xxx xxx" value="${esc(S.f.phone)}"></div>
 <div class="fld"><label for="lw">Mật khẩu</label><input id="lw" type="${S.pw?'text':'password'}" autocomplete="current-password" placeholder="Nhập mật khẩu" onkeydown="if(event.key==='Enter')subLogin()"><button class="eye" aria-label="Hiện mật khẩu" onclick="S.pw=!S.pw;S.f.phone=$('#lp').value;render();$('#lw').focus()">${ic('eye',20)}</button></div>
-<button class="btn" id="go" onclick="subLogin()">${ic('lock',19)} Đăng nhập</button><button class="link" onclick="S.f={};S.reset=true;nav('info')">Quên mật khẩu? Tạo mật khẩu mới</button>
+<button class="btn" id="go" onclick="subLogin()">${ic('lock',19)} Đăng nhập</button><button class="link" onclick="S.f={};S.reset=true;nav('info')">Quên mật khẩu? Xác minh hồ sơ để tạo lại</button>
 <div class="note" style="margin-top:auto">Chưa có mật khẩu? Quay lại và chọn <b>Đăng nhập lần đầu</b>.</div>`,"nav('welcome')")}
 function viewInfo(){const f=S.f;return shell(`<h1>${S.add?'Thêm học sinh':S.reset?'Tạo mật khẩu mới':'Xác minh hồ sơ'}</h1><p class="s">Nhập đúng họ tên, ngày sinh và trường như trong hồ sơ để hệ thống nhận ra em.</p>${E()}
 <div class="fld"><label for="n">Họ và tên học sinh</label><input id="n" value="${esc(f.name)}" placeholder="VD: Nguyễn Văn An" autocomplete="off"></div>
 <div class="fld"><label for="d">Ngày sinh</label><input id="d" type="date" value="${esc(f.dob)}"></div>
 <div class="fld"><label for="s">Trường THCS</label><input id="s" value="${esc(f.school)}" placeholder="VD: THCS Nguyễn Tất Thành" autocomplete="off"></div>
 <button class="btn" id="go" onclick="subInfo()">Tiếp tục</button>`,S.add?"S.add=false;nav('app')":"nav('welcome')",1)}
-function viewAcct(){return shell(`<h1>Tạo mật khẩu</h1><p class="s">Chào <b style="color:var(--ink)">${esc(S.f.found)}</b>! Chọn SĐT và mật khẩu để đăng nhập từ lần sau.</p><div class="note" style="margin-bottom:16px">Anh/chị/em cùng học? Dùng chung một SĐT và mật khẩu, rồi đổi hồ sơ ngay trong ứng dụng.</div>${E()}
+function viewAcct(){return shell(`<h1>${S.reset?'Tạo tài khoản mới':'Tạo mật khẩu'}</h1><p class="s">Chào <b style="color:var(--ink)">${esc(S.f.found)}</b>! Chọn SĐT và mật khẩu để đăng nhập từ lần sau.</p>${S.reset?`<div class="note" style="margin-bottom:16px;background:#fff7e6">Đã xác minh hồ sơ. ${S.old?'Tài khoản cũ'+(S.old.pm?' (SĐT '+esc(S.old.pm)+')':'')+' của em <b>sẽ bị xóa</b> khi em lưu mật khẩu mới.':''} Em tạo SĐT và mật khẩu mới như lần đăng nhập đầu tiên.</div>`:'<div class="note" style="margin-bottom:16px">Mỗi học sinh chỉ có 1 tài khoản (1 SĐT). Anh/chị/em cùng học có thể dùng chung một SĐT và mật khẩu, rồi đổi hồ sơ ngay trong ứng dụng.</div>'}${E()}
 <div class="fld"><label for="ph">Số điện thoại đăng nhập</label><input id="ph" type="tel" inputmode="numeric" autocomplete="username" value="${esc(S.f.phone)}" placeholder="09xx xxx xxx"></div>
 <div class="fld"><label for="w1">Mật khẩu mới</label><input id="w1" type="${S.pw?'text':'password'}" autocomplete="new-password" oninput="pwMeter()" placeholder="Ít nhất 8 ký tự"><button class="eye" aria-label="Hiện mật khẩu" onclick="S.pw=!S.pw;$('#w1').type=$('#w2').type=S.pw?'text':'password'">${ic('eye',20)}</button></div>
 <div class="pm" id="pm"><i></i><i></i><i></i><i></i></div>
@@ -412,6 +432,8 @@ async function subInfo(){const f={name:$('#n').value.trim(),dob:$('#d').value,sc
   if(!f.name||!f.dob||!f.school)return fail('Vui lòng nhập đủ họ tên, ngày sinh và trường.');
   busy(true);let r;try{r=await DB.findStudent(f)}catch(e){return fail('Không đọc được hồ sơ: '+e.message)}
   if(!r)return fail('Thông tin chưa khớp hồ sơ. Em kiểm tra lại họ tên, ngày sinh và tên trường (hoặc hỏi trợ giảng).');
+  if(!S.add&&!S.reset){const ow=await DB.stuOwner(r.id);if(ow)return fail(DB.linkedMsg(ow))}
+  S.old=null;if(S.reset)S.old=await DB.stuOwner(r.id);
   if(S.add){try{await DB.link(r.id,r.vh,r.name)}catch(e){return fail(e.message)}busy(false);S.add=false;return switchTo(r.id)}
   S.sid=r.id;S.vh=r.vh;S.f.found=r.name;busy(false);S.pw=false;nav('acct')}
 async function subAcct(){const p=$('#ph').value.trim(),a=$('#w1').value,b=$('#w2').value;S.f.phone=p;
