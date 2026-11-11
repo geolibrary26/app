@@ -379,7 +379,7 @@ const tone=v=>v>=8?'g':v>=6.5?'t2':v>=5?'w':'r';
 const fmt=n=>(Math.round(n*100)/100).toString().replace('.',',');
 const tm=s=>+s.slice(0,2)*60+ +s.slice(3);
 const safeUrl=u=>/^https?:\/\//i.test(u||'')?u:'';
-async function openSession(sid){const r=await DB.load(sid);S.stu=r.stu;S.data=r.data;S.data.sess=[];S.notes=await DB.notices().catch(()=>[]);watchScores(sid);refreshSess(true)}
+async function openSession(sid){const r=await DB.load(sid);S.stu=r.stu;S.data=r.data;S.data.sess=[];S.notes=await DB.notices().catch(()=>[]);watchScores(sid);refreshSess(true);watchFees(sid)}
 const sidOf=u=>{const m=(u.email||'').match(/^([a-z0-9]+)-[a-z0-9]+@/);return m&&(u.email||'').endsWith('@'+CONFIG.emailDomain)?m[1]:null};
 async function boot(){
   if(!initFb()){S.step='setup';return render()}
@@ -549,7 +549,7 @@ function vMe(){const s=S.stu;return`<div class="ph"><h1>Cá nhân</h1></div><div
   <div class="card"><div class="kv"><span>Ngày sinh</span><b>${vd(s.dob)}</b></div><div class="kv"><span>Trường THCS</span><b>${esc(s.school)}</b></div><div class="kv"><span>SĐT liên hệ</span><b>${esc(s.phone.replace(/(\d{4})(\d{3})(\d{3})/,'$1 $2 $3'))}</b></div><div class="kv"><span>Số lớp đang học</span><b>${S.data.classes.length}</b></div></div>
   <div class="card">${S.sids.length>1?`<button class="act" onclick="openSw()">${ic('user')}<span>Đổi học sinh</span><em>${S.sids.length} hồ sơ</em></button>`:''}<button class="act" onclick="S.add=true;S.f={};nav('info')">${ic('grad')}<span>Thêm học sinh (anh/chị/em)</span></button><button class="act" onclick="openPw()">${ic('lock')}<span>Đổi mật khẩu</span></button></div>
   <button class="btn sec" style="width:calc(100% - 40px);margin:6px 20px;color:var(--r)" onclick="logout()">${ic('out',20)} Đăng xuất</button>`}
-function tabs(){const T=[['home','home','Trang chủ'],['classes','book','Lớp học'],['scores','chart','Điểm số'],['att','cal','Điểm danh'],['me','user','Cá nhân']];return`<nav class="tabs">${T.map(t=>`<button class="tb ${S.tab===t[0]?'on':''}" onclick="go('${t[0]}')"><span>${ic(t[1],22)}</span>${t[2]}</button>`).join('')}</nav>`}
+function tabs(){const T=[['home','home','Trang chủ'],['classes','book','Lớp học'],['scores','chart','Điểm số'],['att','cal','Điểm danh'],['fees','wallet','Học phí'],['me','user','Cá nhân']];return`<nav class="tabs">${T.map(t=>`<button class="tb ${S.tab===t[0]?'on':''}" onclick="go('${t[0]}')"><span>${ic(t[1],22)}</span>${t[2]}</button>`).join('')}</nav>`}
 
 /* chi tiết từng câu/ý: lấy từ phiếu công khai của đợt thi (pubexam/{mã}/idx → pubres/{token}) */
 const _norm=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/gi,'d').toLowerCase().trim();
@@ -588,9 +588,9 @@ async function showProof(i){const x=S.data.att[i];if(!x||!x.pid)return;let v=nul
 function closeSheet(){$('#sheet').innerHTML='';document.body.style.overflow=''}
 function calMove(k){S.calM=new Date(S.calM.getFullYear(),S.calM.getMonth()+k,1);render()}
 function go(t){S.tab=t;render();window.scrollTo(0,0)}
-async function logout(){stopScoreLive();S.manual=true;try{await au.signOut()}catch(e){}S={manual:false,face:null,step:'welcome',tab:'home',f:{},stu:null,data:null,calM:new Date(),clsF:'all',err:'',busy:false,t:0,pw:false,reset:false,sids:[],notes:[],add:false,phone:''};render()}
+async function logout(){stopScoreLive();stopFees();S.manual=true;try{await au.signOut()}catch(e){}S={manual:false,face:null,step:'welcome',tab:'home',f:{},stu:null,data:null,calM:new Date(),clsF:'all',err:'',busy:false,t:0,pw:false,reset:false,sids:[],notes:[],add:false,phone:''};render()}
 function render(){const st=S.step;let h;
-  if(st==='app'){const c=({home:vHome,classes:vClasses,scores:vScores,att:vAtt,me:vMe,notes:vNotes}[S.tab])();h=DESK()?deskShell(c):c+tabs()}
+  if(st==='app'){const c=({home:vHome,classes:vClasses,scores:vScores,att:vAtt,me:vMe,notes:vNotes,fees:vFees}[S.tab])();h=DESK()?deskShell(c):c+tabs()}
   else h=({loading:viewLoading,setup:viewSetup,welcome:viewWelcome,login:viewLogin,info:viewInfo,acct:viewAcct,ok:viewOk}[st])();
   const k=st+(st==='app'?S.tab:''),ch=k!==_k;_k=k;A.classList.remove('enter');A.innerHTML=h;
   if(ch){void A.offsetWidth;A.classList.add('enter');let n=0;A.querySelectorAll(':scope>*:not(.tabs),:scope>.auth>*').forEach(e=>e.style.animationDelay=Math.min(n++*45,520)+'ms')}}
@@ -611,10 +611,53 @@ async function subPw(){const a=$('#cp0').value,b=$('#cp1').value,c=$('#cp2').val
   if(!a)return er('Nhập mật khẩu hiện tại.');if(b.length<8||!/\d/.test(b)||!/[a-zA-Z]/.test(b))return er('Mật khẩu mới cần ít nhất 8 ký tự, gồm cả chữ và số.');if(b!==c)return er('Hai mật khẩu mới chưa giống nhau.');if(a===b)return er('Mật khẩu mới phải khác mật khẩu cũ.');
   try{const u=au.currentUser;await u.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(u.email,a));await u.updatePassword(b);DB.log('pw',S.stu.id);closeSheet();toast('Đã đổi mật khẩu thành công')}catch(x){er(x.code==='auth/invalid-credential'||x.code==='auth/wrong-password'?'Mật khẩu hiện tại chưa đúng.':AUTHERR[x.code]||x.message)}}
 function toast(m){const e=document.createElement('div');e.className='toast';e.textContent=m;document.body.appendChild(e);setTimeout(()=>e.remove(),2800)}
-function deskShell(c){const T=[['home','home','Trang chủ'],['classes','book','Lớp học'],['scores','chart','Điểm số'],['att','cal','Điểm danh'],['notes','bell','Thông báo'],['me','user','Cá nhân']],u=unread(),s=S.stu,m=S.sids.length>1;
+function deskShell(c){const T=[['home','home','Trang chủ'],['classes','book','Lớp học'],['scores','chart','Điểm số'],['att','cal','Điểm danh'],['fees','wallet','Học phí'],['notes','bell','Thông báo'],['me','user','Cá nhân']],u=unread(),s=S.stu,m=S.sids.length>1;
   return`<div class="dk"><aside class="dk-s">${brandRow(40,'Cổng học sinh')}<nav>${T.map(t=>`<button class="dn ${S.tab===t[0]?'on':''}" onclick="go('${t[0]}')">${ic(t[1],20)}<span>${t[2]}</span>${t[0]==='notes'&&u?`<em>${u}</em>`:''}</button>`).join('')}</nav><div class="dk-u" ${m?'onclick="openSw()"':''}><div class="av">${esc(s.name.trim().split(' ').pop()[0])}</div><div style="min-width:0"><b>${esc(s.name)}</b><small>${m?'Đổi học sinh ▾':esc(s.school)}</small></div></div><button class="dn" onclick="S.add=true;S.f={};nav('info')">${ic('grad',20)}<span>Thêm học sinh</span></button><button class="dn" onclick="openPw()">${ic('lock',20)}<span>Đổi mật khẩu</span></button><button class="dn" onclick="logout()" style="color:var(--r)">${ic('out',20)}<span>Đăng xuất</span></button></aside><main class="dk-m">${c}</main></div>`}
 matchMedia('(min-width:900px)').addEventListener('change',()=>{if(S.step==='app')render()});
 let _tk=0;setInterval(()=>{if(S.step!=='app'||!S.stu||document.hidden)return;_tk++;if(_tk%2===0)refreshSess(false);else softRender()},60000);
+/* ---------- HỌC PHÍ · QR chuyển khoản riêng từng học sinh theo tháng (SePay) ---------- */
+/* ---- HỌC PHÍ · QR SePay (dùng chung lms + app) ---- */
+const FB_BANKS=['Vietcombank','VietinBank','BIDV','Agribank','MBBank','Techcombank','ACB','VPBank','TPBank','Sacombank','HDBank','VIB','SHB','OCB','MSB','SeABank','Eximbank','LPBank'];
+const fbNA=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/gi,'d').toUpperCase().replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+function fbContent(tpl,name,cls,month){const m=String(month||'');return fbNA((tpl||'HP T{THANG} {LOP} {TEN}').replace(/\{THANG\}/g,m.slice(5,7)).replace(/\{NAM\}/g,m.slice(0,4)).replace(/\{LOP\}/g,fbNA(cls)).replace(/\{TEN\}/g,fbNA(name))).slice(0,50).trim()}
+function fbQr(b,amount,des){return 'https://qr.sepay.vn/img?acc='+encodeURIComponent(b.acc)+'&bank='+encodeURIComponent(b.bank)+(+amount>0?'&amount='+Math.round(+amount):'')+(des?'&des='+encodeURIComponent(des):'')+'&template=compact'}
+function fbPickBank(batch,banks){const L=Object.values(banks||{}).filter(b=>b&&b.active!==false&&b.acc&&b.bank).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  if(batch.bankId){const x=L.find(b=>b.id===batch.bankId);if(x)return x}
+  return L.find(b=>b.classIds&&b.classIds[batch.classId])||L.find(b=>!b.classIds||!Object.keys(b.classIds).length)||null}
+
+Object.assign(P,{wallet:'M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 9h16M15 14h2',copy:'M9 9h10v10H9zM5 15V5h10'});
+const mny=n=>(+n||0).toLocaleString('vi-VN')+'đ';
+const FE=()=>S.fee||(S.fee={batches:{},banks:{},pay:{},err:''});
+let feeRefs=[];
+function stopFees(){feeRefs.forEach(([r,f])=>r.off('value',f));feeRefs=[]}
+function watchFees(sid){stopFees();if(!rdb)return;S.fee={batches:{},banks:{},pay:{},err:''};
+  const on=(path,key)=>{const r=rdb.ref(path),f=sn=>{const F=FE();F[key]=sn.val()||{};F.err='';if(S.step==='app'&&S.stu&&S.stu.id===sid&&!$('#cam').classList.contains('on')&&!$('#sheet').innerHTML&&(S.tab==='fees'||S.tab==='home'))render()};r.on('value',f,()=>{FE().err='perm'});feeRefs.push([r,f])};
+  on('feeBatches','batches');on('feeBanks','banks');on('feePay/'+sid,'pay')}
+const feeBanks=()=>Object.entries(FE().banks).map(([id,b])=>Object.assign({id},b));
+const feeList=()=>{const cids=((S.data||{}).classes||[]).map(c=>c.id);return Object.entries(FE().batches).map(([id,b])=>Object.assign({id},b)).filter(b=>b.visible!==false&&cids.includes(b.classId)&&+b.amount>0).sort((a,b)=>String(b.month).localeCompare(String(a.month)))};
+const feePay=id=>FE().pay[id]||null;
+const feeCls=b=>(S.data.classes.find(c=>c.id===b.classId)||{}).name||'';
+const feeTitle=b=>b.title||('Học phí tháng '+String(b.month).slice(5,7)+'/'+String(b.month).slice(0,4));
+const fbCopy=t=>{(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('Đã sao chép')).catch(()=>prompt('Sao chép:',t))};
+function vFees(){const L=feeList(),due=L.filter(b=>!feePay(b.id)),sum=due.reduce((a,b)=>a+ +b.amount,0);
+  return `<div class="ph"><h1>Học phí</h1><p>${due.length?`Còn ${due.length} đợt chưa thanh toán`:'Em đã thanh toán đủ các đợt học phí'}</p></div>${FE().err?'<div class="card"><small style="color:var(--mu)">Chưa đọc được dữ liệu học phí. Hãy báo trợ giảng cập nhật Rules.</small></div>':''}
+  <div class="stats" style="margin-top:16px;grid-template-columns:1fr 1fr"><div class="st"><b style="color:var(--am)">${mny(sum)}</b><small>Cần thanh toán</small></div><div class="st"><b style="color:var(--g)">${L.length-due.length}/${L.length}</b><small>Đợt đã thanh toán</small></div></div>
+  <div style="height:14px"></div>${L.map(b=>{const p=feePay(b.id);return `<div class="card" onclick="openFee('${b.id}')"><div class="li"><div class="ico" style="background:${p?'var(--gs)':'var(--as)'};color:${p?'var(--g)':'var(--am)'}">${ic('wallet',22)}</div><div class="t"><b>${esc(feeTitle(b))}</b><small>${esc(feeCls(b))} · ${mny(b.amount)}${b.due?' · Hạn '+vd(b.due):''}</small></div><span class="tag" style="${p?'background:var(--gs);color:#0b8057':'background:var(--as);color:#a35f00'}">${p?'Đã thanh toán':'Chưa thanh toán'}</span></div></div>`}).join('')||'<div class="card"><small style="color:var(--mu)">Chưa có đợt học phí nào được mở.</small></div>'}`}
+function openFee(id){const b=feeList().find(x=>x.id===id);if(!b)return;const p=feePay(id),bank=fbPickBank(b,feeBanks()),des=fbContent(b.tpl,S.stu.name,feeCls(b),b.month),url=bank?fbQr(bank,b.amount,des):'';
+  const kv=(k,v,cp)=>`<div class="kv"><span>${k}</span><b>${esc(v)}${cp?` <button class="ib sm" style="display:inline-grid;vertical-align:middle;margin-left:6px" aria-label="Sao chép" data-v="${esc(cp)}" onclick="fbCopy(this.dataset.v)">${ic('copy',15)}</button>`:''}</b></div>`;
+  $('#sheet').innerHTML=`<div class="sheet" onclick="closeSheet()"><div class="sh" onclick="event.stopPropagation()" style="text-align:center"><div class="grab"></div><small style="color:var(--mu)">${esc(feeCls(b))}${b.due?' · Hạn '+vd(b.due):''}</small><h2 style="font-size:22px;letter-spacing:-.03em;margin:2px 0 4px">${esc(feeTitle(b))}</h2><div style="font-size:30px;font-weight:800;color:var(--b);letter-spacing:-.03em">${mny(b.amount)}</div>
+  ${bank?`<img class="pimg" style="max-width:300px;margin:12px auto 6px;display:block" src="${esc(url)}" alt="Mã QR chuyển khoản"><div style="text-align:left;margin-top:8px">${kv('Ngân hàng',bank.bank)}${kv('Số tài khoản',bank.acc,bank.acc)}${bank.holder?kv('Chủ tài khoản',bank.holder):''}${kv('Số tiền',mny(b.amount),String(Math.round(b.amount)))}${kv('Nội dung CK',des,des)}</div><a class="btn sec" style="text-decoration:none" href="${esc(url)}&download=true" target="_blank" rel="noopener">Tải ảnh QR</a>`:'<div class="note" style="text-align:left;margin-top:14px">Trợ giảng chưa cài tài khoản nhận học phí cho lớp này. Em hỏi trợ giảng nhé.</div>'}
+  ${b.note?`<div class="note" style="text-align:left;margin-top:12px">${esc(b.note)}</div>`:''}
+  ${p?`<div class="ok2" style="text-align:left">Đã thanh toán lúc ${hm(p.at)} · ${vd(iso(new Date(p.at)))}${p.vf?' · Trợ giảng đã đối soát':' · Chờ trợ giảng đối soát'}</div>${p.vf?'':`<button class="btn sec" style="color:var(--r)" onclick="feeUndo('${id}')">Chọn nhầm? Huỷ xác nhận</button>`}`:`<div class="note" style="text-align:left;margin-top:12px">Quét QR bằng app ngân hàng (nội dung và số tiền được điền sẵn). Chuyển khoản xong, em bấm nút bên dưới.</div><button class="btn gr" onclick="feePaid('${id}')">${ic('check',19)} Tôi đã chuyển khoản</button>`}
+  <button class="btn sec" onclick="closeSheet()">Đóng</button></div></div>`}
+async function feePaid(id){if(!confirm('Xác nhận phụ huynh đã chuyển khoản học phí đợt này?'))return;
+  try{await rdb.ref('feePay/'+S.stu.id+'/'+id).set({st:'paid',at:Date.now(),by:'parent'});closeSheet();toast('Đã ghi nhận: Đã thanh toán');render()}
+  catch(e){toast('Chưa lưu được: '+(/permission/i.test(e.message||'')?'cần cập nhật Rules (nhánh feePay).':e.message))}}
+async function feeUndo(id){if(!confirm('Huỷ xác nhận đã chuyển khoản?'))return;
+  try{await rdb.ref('feePay/'+S.stu.id+'/'+id).remove();closeSheet();render()}catch(e){toast('Chưa huỷ được: '+(/permission/i.test(e.message||'')?'trợ giảng đã đối soát khoản này.':e.message))}}
+const _vH=vHome;vHome=function(){const h=_vH(),L=feeList().filter(b=>!feePay(b.id));if(!L.length)return h;const sum=L.reduce((a,b)=>a+ +b.amount,0);
+  const c=`<div class="card" onclick="go('fees')"><div class="li"><div class="ico" style="background:var(--as);color:var(--am)">${ic('wallet',22)}</div><div class="t"><b>${L.length} đợt học phí chưa thanh toán</b><small>Tổng ${mny(sum)} · Bấm để xem mã QR</small></div>${ic('chev',18)}</div></div>`,k='<div class="sec" style="padding-top:22px"><h2>Tổng quan</h2></div>';return h.replace(k,c+k)};
+
 boot();
 </script>
 </body>
